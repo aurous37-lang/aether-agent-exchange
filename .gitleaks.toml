@@ -1,0 +1,18 @@
+title = "AAE public release secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Vendored OpenZeppelin test fixtures"
+paths = [
+  '''^aether-agent-exchange/contracts/lib/openzeppelin-contracts/''',
+  '''^aether-agent-exchange/contracts/lib/forge-std/''',
+]
+
+[[allowlists]]
+description = "Named public USDC contract addresses"
+regexTarget = "match"
+regexes = [
+  '''(?i)(?:BASE_SEPOLIA_USDC_TOKEN|AAE_(?:BASE|ETHEREUM)_USDC_TOKEN_ADDRESS|VITE_(?:BASE_|ETHEREUM_)?USDC_TOKEN_ADDRESS)\s*[:=]\s*['"]?0x[a-f0-9]{40}''',
+]

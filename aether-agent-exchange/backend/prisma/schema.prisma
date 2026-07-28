@@ -1,0 +1,981 @@
+// This is the single source of truth for the database schema.
+// Local dev: SQLite (file:./dev.db)
+// Production: swap provider to "postgresql" and url to DATABASE_URL env var.
+// Enums are stored as String for SQLite compatibility — see utils/sqlite-compat.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ─── Users (clients, handlers, arbiters) ──────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  walletAddress String   @unique
+  displayName   String?
+  role          String   @default("CLIENT")
+  termsAcceptedAt DateTime?          // Timestamp of policy acceptance
+  policyVersion   String?            // Version string of accepted policy (e.g. "2026-03-23")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  postedJobs    Job[]          @relation("ClientJobs")
+  agents        Agent[]        @relation("HandlerAgents")
+  ratings       Rating[]
+  notifications Notification[]
+  jobReports    JobReport[]
+  consents      UserConsent[]
+  mcpSessions   McpSession[]
+  mcpToolPolicies McpToolPolicy[]
+  mcpApprovalRequests McpApprovalRequest[]
+  mcpReceipts   McpReceipt[]
+}
+
+// ─── Granular Consent Records ────────────────────────────────────
+// Tracks per-type consent (terms, privacy, risk, disclosure) independently.
+// Policy version is recorded so stale consent can be detected on version bump.
+
+model UserConsent {
+  id            String   @id @default(uuid())
+  userId        String
+  consentType   String   // terms, privacy, risk, disclosure
+  policyVersion String
+  acceptedAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, consentType, policyVersion])
+  @@index([userId])
+}
+
+// ─── Agents ───────────────────────────────────────────────────────
+
+model Agent {
+  id               String  @id @default(uuid())
+  agentId          String  @unique
+  walletAddress    String  @unique
+  handlerId        String
+  metadataURI      String
+  name             String
+  description      String
+  capabilities     String  @default("[]") // JSON array stored as string
+  models           String  @default("[]") // JSON array stored as string
+  avatarUrl        String?
+  availability     String  @default("24/7")
+  responseTime     String  @default("< 5 minutes")
+  active           Boolean @default(true)
+  autonomousAccept Boolean @default(false)
+  paymentPrivacyMode  String @default("standard")
+  configDisclosureMode String @default("summary")
+  modelDisclosureMode  String @default("public")
+  apiCallDisclosureMode String @default("summary")
+  publicConfigSummary   String?
+  x402EndpointUrl       String?
+  px402Supported        Boolean @default(false)
+  probePriceUsd         String?
+  probeDescription      String?
+  probeMethod           String @default("GET")
+  probeSchemaHash       String?
+
+  avgRating        Float   @default(0)
+  trustScore       Float   @default(0)
+  avgCompletionMin Int     @default(0)
+  responseTimeAvg  Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  handler      User          @relation("HandlerAgents", fields: [handlerId], references: [id])
+  acceptedJobs Job[]         @relation("AgentJobs")
+  bids         Bid[]
+  ratings      Rating[]
+  apiKeys      AgentApiKey[]
+  actionLogs   AgentActionLog[]
+  serviceOffers ServiceOffer[]
+}
+
+model AgentApiKey {
+  id        String   @id @default(uuid())
+  agentId   String
+  keyHash   String   // bcrypt hash — not unique-indexed since bcrypt is non-deterministic
+  label     String
+  active    Boolean  @default(true)
+  lastUsed  DateTime?
+  createdAt DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+}
+
+// ─── Agent Service Offers ─────────────────────────────────────────
+
+model ServiceOffer {
+  id                String   @id @default(uuid())
+  agentId           String
+  title             String
+  description       String
+  category          String
+  deliverables      String   @default("[]") // JSON array
+  startingPrice     Float
+  priceToken        String
+  pricingUnit       String   @default("fixed")
+  estimatedDelivery String?
+  revisionPolicy    String?
+  status            String   @default("ACTIVE") // ACTIVE, PAUSED, ARCHIVED
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+  @@index([category])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ─── Jobs ─────────────────────────────────────────────────────────
+
+model Job {
+  id                 String    @id @default(uuid())
+  title              String
+  description        String
+  category           String
+  deliverables       String    @default("[]") // JSON array
+  acceptanceCriteria String?
+  budgetAmount       Float
+  budgetToken        String
+  suggestedMin       Float?
+  suggestedMax       Float?
+  deadline           DateTime?
+  reviewPeriod       Int       @default(604800)
+  escrowAddress      String?
+  settlementRail     String    @default("offchain")
+  network            String    @default("base")
+  chainId            Int       @default(8453)
+  tokenAddress       String?
+  onchainJobId       String?
+  escrowContractVersion String @default("legacy")
+  evaluatorWallet    String?
+  expiredAt          DateTime?
+  settlementStatus   String    @default("PENDING")
+  completedByEvaluatorAt DateTime?
+  workspaceProvider  String    @default("github")
+  status             String    @default("OPEN")
+
+  clientId   String
+  agentId    String?
+  acceptedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client      User         @relation("ClientJobs", fields: [clientId], references: [id])
+  agent       Agent?       @relation("AgentJobs", fields: [agentId], references: [id])
+  bids        Bid[]
+  submissions Submission[]
+  dispute     Dispute?
+  ratings     Rating[]
+  reports     JobReport[]
+  paymentLedger PaymentLedger[]
+  settlementReceiptVerifications SettlementReceiptVerification[]
+  indexedChainEvents IndexedChainEvent[]
+  escrowLifecycleState EscrowLifecycleState?
+  workspace   ContractWorkspace?
+  mcpSessions McpSession[]
+  mcpToolPolicies McpToolPolicy[]
+  mcpApprovalRequests McpApprovalRequest[]
+  mcpReceipts McpReceipt[]
+}
+
+model ChainIndexerCursor {
+  id                String   @id @default(uuid())
+  chainKey          String   @unique
+  chainId           Int
+  caip2Network      String
+  provider          String   @default("evm-rpc")
+  cursorStatus      String   @default("ACTIVE") // ACTIVE, PAUSED, ERROR
+  lastIndexedBlock  String   @default("0")
+  finalizedBlock    String?
+  lastBlockHash     String?
+  reorgScanBlock    String?
+  confirmationDepth Int      @default(12)
+  reorgDepth        Int      @default(64)
+  lastError         String?
+  lastStartedAt     DateTime?
+  lastSucceededAt   DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([chainId])
+  @@index([cursorStatus])
+}
+
+model IndexedChainEvent {
+  id                    String   @id @default(uuid())
+  chainKey              String
+  chainId               Int
+  caip2Network          String
+  blockNumber           String
+  blockHash             String
+  transactionIndex      Int?
+  txHash                String
+  logIndex              Int
+  contractAddress       String
+  factoryAddress        String?
+  escrowAddress         String?
+  eventName             String
+  lifecycleType         String?  // ESCROW_CREATED, FUNDED, STARTED, DELIVERED, RELEASED, REFUNDED, DISPUTED, RESOLVED
+  jobId                 String?
+  onchainJobId          String?
+  actorAddress          String?
+  clientAddress         String?
+  agentAddress          String?
+  recipientAddress      String?
+  amountGross           String?
+  agentPayout           String?
+  platformFee           String?
+  tokenAddress          String?
+  tokenSymbol           String?
+  escrowContractVersion String?
+  factoryBound          Boolean  @default(false)
+  factoryBindingStatus  String   @default("UNBOUND")
+  confirmations         Int      @default(0)
+  finalityStatus        String   @default("PENDING") // PENDING, FINAL, REORGED, FAILED
+  decodedArgs           String   @default("{}")
+  proofHash             String?
+  indexedAt             DateTime @default(now())
+  finalizedAt           DateTime?
+  removedAt             DateTime?
+
+  job Job? @relation(fields: [jobId], references: [id])
+
+  @@unique([chainId, txHash, logIndex])
+  @@index([jobId])
+  @@index([chainId])
+  @@index([chainKey])
+  @@index([escrowAddress])
+  @@index([eventName])
+  @@index([lifecycleType])
+  @@index([finalityStatus])
+  @@index([blockNumber])
+}
+
+model EscrowLifecycleState {
+  id                    String   @id @default(uuid())
+  jobId                 String?  @unique
+  chainKey              String
+  chainId               Int
+  caip2Network          String
+  escrowAddress         String
+  factoryAddress        String?
+  onchainJobId          String?
+  escrowContractVersion String?
+  tokenAddress          String?
+  tokenSymbol           String?
+  amountGross           String?
+  agentPayout           String?
+  platformFee           String?
+  clientAddress         String?
+  agentAddress          String?
+  factoryBound          Boolean  @default(false)
+  factoryBindingStatus  String   @default("UNBOUND")
+  factoryBindingProofHash String?
+  factoryBindingTxHash  String?
+  factoryBindingBlockNumber String?
+  factoryBindingLogIndex Int?
+  state                 String   @default("UNKNOWN")
+  finalityStatus        String   @default("PENDING")
+  confirmations         Int      @default(0)
+  latestTxHash          String?
+  latestBlockNumber     String?
+  latestTransactionIndex Int?
+  latestLogIndex        Int?
+  createdOnchainAt      DateTime?
+  fundedAt              DateTime?
+  acceptedAt            DateTime?
+  deliveredAt           DateTime?
+  releasedAt            DateTime?
+  refundedAt            DateTime?
+  disputedAt            DateTime?
+  resolvedAt            DateTime?
+  lastIndexedAt         DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  job Job? @relation(fields: [jobId], references: [id])
+
+  @@unique([chainId, escrowAddress])
+  @@index([jobId])
+  @@index([chainId])
+  @@index([chainKey])
+  @@index([state])
+  @@index([finalityStatus])
+}
+
+// ─── Contract-Bound Workspaces ──────────────────────────────────
+// Repositories are collaboration and evidence layers only. Workspace
+// state must not bypass Job approval, dispute, or PaymentLedger gates.
+
+model ContractWorkspace {
+  id                     String   @id @default(uuid())
+  jobId                  String   @unique
+  provider               String   // github, gitlawb
+  mode                   String   @default("linked") // created, linked
+  status                 String   @default("PROVISIONING") // PROVISIONING, READY, SUBMITTED, VERIFIED, DISPUTED, ARCHIVED, FAILED
+  liveMode               Boolean  @default(false)
+  provisioningIdempotencyKey String? @unique
+  providerWorkspaceId    String?
+  repoUrl                String?
+  repoOwner              String?
+  repoName               String?
+  providerIdentity       String?
+  nodeUrl                String?
+  repoDid                String?
+  cloneUrl               String?
+  defaultBranch          String?
+  branchRef              String?
+  prRef                  String?
+  prNumber               Int?
+  commitSha              String?
+  treeCid                String?
+  refCertificateCid      String?
+  actorDids              String   @default("[]")
+  ucanDelegationRefs     String   @default("[]")
+  capabilitySummary      String?
+  latestVerificationStatus String @default("UNVERIFIED")
+  credentialsReady       Boolean  @default(false)
+  delegationReady        Boolean  @default(false)
+  nodeReady              Boolean  @default(false)
+  webhookReady           Boolean  @default(false)
+  verificationReady      Boolean  @default(false)
+  provisioningAttempts   Int      @default(0)
+  lastProvisioningError  String?
+  lastReconciledAt       DateTime?
+  archivedAt             DateTime?
+  createdBy              String
+  updatedBy              String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  job                  Job                         @relation(fields: [jobId], references: [id])
+  events               WorkspaceEvent[]
+  provisioningJobs     WorkspaceProvisioningJob[]
+  verificationResults  WorkspaceVerificationResult[]
+  evidenceSnapshots    WorkspaceEvidenceSnapshot[]
+
+  @@index([provider])
+  @@index([status])
+  @@index([liveMode])
+  @@index([latestVerificationStatus])
+}
+
+model WorkspaceProvisioningJob {
+  id              String   @id @default(uuid())
+  workspaceId     String?
+  jobId           String
+  provider        String
+  idempotencyKey  String   @unique
+  status          String   @default("QUEUED") // QUEUED, RUNNING, SUCCEEDED, FAILED
+  action          String   @default("provision")
+  attempts        Int      @default(0)
+  maxAttempts     Int      @default(5)
+  nextRunAt       DateTime @default(now())
+  lastError       String?
+  lockedAt        DateTime?
+  completedAt     DateTime?
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace ContractWorkspace? @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId])
+  @@index([jobId])
+  @@index([provider])
+  @@index([status])
+  @@index([nextRunAt])
+}
+
+model WorkspaceEvent {
+  id              String   @id @default(uuid())
+  workspaceId     String
+  jobId           String
+  provider        String
+  eventType       String
+  providerEventId String?
+  actor           String?
+  actorDid        String?
+  actorProviderId String?
+  branchRef       String?
+  prRef           String?
+  prNumber        Int?
+  commitSha       String?
+  treeCid         String?
+  refCertificateCid String?
+  payload         String?
+  normalizedData  String?
+  deliverySignatureHash String?
+  deliveryTimestamp DateTime?
+  replayWindowSeconds Int?
+  signatureVerified Boolean @default(false)
+  replayProtected   Boolean @default(false)
+  ingestedBy      String
+  ingestedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  workspace ContractWorkspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, providerEventId])
+  @@unique([workspaceId, deliverySignatureHash])
+  @@index([jobId])
+  @@index([provider])
+  @@index([eventType])
+  @@index([commitSha])
+  @@index([ingestedAt])
+}
+
+model WorkspaceVerificationResult {
+  id               String   @id @default(uuid())
+  workspaceId      String
+  jobId            String
+  provider         String
+  status           String   @default("PENDING") // PENDING, PASSED, FAILED
+  submissionRef    String
+  branchRef        String?
+  prRef            String?
+  prNumber         Int?
+  commitSha        String?
+  treeCid          String?
+  refCertificateCid String?
+  signerDid        String?
+  actorProviderId  String?
+  targetBranch     String?
+  deliverablePaths String   @default("[]")
+  checks           String   @default("[]")
+  failureReasons   String   @default("[]")
+  evidence         String?
+  verifiedBy       String
+  verifiedAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace ContractWorkspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId])
+  @@index([jobId])
+  @@index([status])
+  @@index([commitSha])
+  @@index([verifiedAt])
+}
+
+model WorkspaceEvidenceSnapshot {
+  id               String   @id @default(uuid())
+  workspaceId      String
+  jobId            String
+  provider         String
+  snapshotType     String   @default("final")
+  repoUrl          String?
+  cloneUrl         String?
+  branchRef        String?
+  prRef            String?
+  prNumber         Int?
+  commitSha        String?
+  treeCid          String?
+  refCertificateCid String?
+  verificationResultId String?
+  evidence         String
+  evidenceHash     String
+  createdBy        String
+  createdAt        DateTime @default(now())
+
+  workspace ContractWorkspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, evidenceHash])
+  @@index([jobId])
+  @@index([provider])
+  @@index([commitSha])
+  @@index([createdAt])
+}
+
+// ─── Settlement Ledger ───────────────────────────────────────────
+// Source of truth for paid-chain settlement receipts. Raw x402/px402
+// payment headers and private notes are never stored here.
+
+model PaymentLedger {
+  id                       String   @id @default(uuid())
+  jobId                    String?
+  receipt                  String
+  rail                     String
+  mode                     String   @default("settlement")
+  amount                   String?
+  token                    String?
+  tokenSymbol              String?
+  tokenAddress             String?
+  wallet                   String?
+  walletAddress            String?
+  payerWallet              String?
+  payeeWallet              String?
+  endpoint                 String?
+  escrow                   String?
+  escrowAddress            String?
+  txHash                   String?  @unique
+  receiptHash              String   @unique
+  chainId                  Int?
+  network                  String?
+  status                   String   @default("PENDING")
+  redactedReference        String?
+  redactedReferenceHash    String?
+  redactedReferenceType    String?
+  redactedPaymentReference String?
+  escrowContractVersion    String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  settledAt                DateTime?
+
+  job Job? @relation(fields: [jobId], references: [id])
+  settlementReceiptVerification SettlementReceiptVerification?
+  mcpApprovalRequests McpApprovalRequest[]
+  mcpReceipts McpReceipt[]
+
+  @@index([jobId])
+  @@index([rail])
+  @@index([mode])
+  @@index([status])
+  @@index([chainId])
+  @@index([createdAt])
+}
+
+model SettlementReceiptVerification {
+  id                    String   @id @default(uuid())
+  jobId                 String
+  paymentLedgerId       String?  @unique
+  provider              String
+  source                String   @default("base-sepolia")
+  rail                  String
+  condition             String   @default("funding")
+  escrowContractVersion String?
+  chainId               Int
+  network               String
+  txHash                String
+  receiptHash           String
+  status                String   @default("PENDING")
+  onchainStatus         String?
+  proofType             String?
+  proofHash             String?
+  proofSummary          String?
+  failureReason         String?
+  blockNumber           String?
+  logIndex              Int?
+  eventName             String?
+  escrowAddress         String?
+  recipientAddress      String?
+  amount                String?
+  tokenSymbol           String?
+  tokenAddress          String?
+  verifiedAt            DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  job           Job            @relation(fields: [jobId], references: [id])
+  paymentLedger PaymentLedger? @relation(fields: [paymentLedgerId], references: [id])
+
+  @@index([jobId])
+  @@index([paymentLedgerId])
+  @@index([provider])
+  @@index([status])
+  @@index([chainId])
+  @@index([network])
+  @@index([txHash])
+  @@index([receiptHash])
+  @@index([verifiedAt])
+}
+
+// ─── MCP Provider Persistence ───────────────────────────────────
+// Stores controlled-pilot MCP metadata only. Raw private keys, raw
+// signatures, raw payment headers, PRXVT notes, and raw calldata must
+// never be persisted in these models.
+
+model McpProvider {
+  id              String   @id @default(uuid())
+  providerKey     String   @unique
+  displayName     String
+  status          String   @default("ACTIVE")
+  network         String?
+  chainId         Int?
+  endpointRef     String?
+  endpointHash    String?
+  capabilitySummary String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  sessions         McpSession[]
+  toolCatalog      McpToolCatalog[]
+  toolPolicies     McpToolPolicy[]
+  approvalRequests McpApprovalRequest[]
+  receipts         McpReceipt[]
+
+  @@index([status])
+  @@index([chainId])
+}
+
+model McpSession {
+  id              String   @id @default(uuid())
+  providerId      String
+  userId          String?
+  jobId           String?
+  sessionRef      String?
+  sessionHash     String?
+  requestId       String?
+  status          String   @default("PENDING")
+  chainId         Int?
+  network         String?
+  scopeSummary    String?
+  approvalUrlRef  String?
+  approvalUrlHash String?
+  startedAt       DateTime?
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  provider McpProvider @relation(fields: [providerId], references: [id])
+  user     User?       @relation(fields: [userId], references: [id])
+  job      Job?        @relation(fields: [jobId], references: [id])
+  approvalRequests McpApprovalRequest[]
+  receipts McpReceipt[]
+
+  @@unique([providerId, sessionHash])
+  @@unique([providerId, requestId])
+  @@index([providerId])
+  @@index([userId])
+  @@index([jobId])
+  @@index([status])
+  @@index([chainId])
+  @@index([approvalUrlHash])
+  @@index([expiresAt])
+}
+
+model McpToolCatalog {
+  id                String   @id @default(uuid())
+  providerId        String
+  toolName          String
+  toolVersion       String   @default("default")
+  status            String   @default("ACTIVE")
+  schemaHash        String?
+  capabilitySummary String?
+  calldataSummary   String?
+  lastSeenAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  provider McpProvider @relation(fields: [providerId], references: [id])
+  policies McpToolPolicy[]
+  approvalRequests McpApprovalRequest[]
+
+  @@unique([providerId, toolName, toolVersion])
+  @@index([providerId])
+  @@index([toolName])
+  @@index([status])
+  @@index([schemaHash])
+}
+
+model McpToolPolicy {
+  id                String   @id @default(uuid())
+  providerId        String
+  toolCatalogId     String?
+  userId            String?
+  jobId             String?
+  policyRef         String?
+  policyHash        String?
+  scope             String   @default("global")
+  status            String   @default("ACTIVE")
+  approvalMode      String   @default("manual")
+  chainId           Int?
+  network           String?
+  capabilitySummary String?
+  calldataSummary   String?
+  maxValueSummary   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  archivedAt        DateTime?
+
+  provider    McpProvider     @relation(fields: [providerId], references: [id])
+  toolCatalog McpToolCatalog? @relation(fields: [toolCatalogId], references: [id])
+  user        User?           @relation(fields: [userId], references: [id])
+  job         Job?            @relation(fields: [jobId], references: [id])
+  approvalRequests McpApprovalRequest[]
+
+  @@unique([providerId, policyHash])
+  @@index([providerId])
+  @@index([toolCatalogId])
+  @@index([userId])
+  @@index([jobId])
+  @@index([status])
+  @@index([chainId])
+  @@index([policyHash])
+}
+
+model McpApprovalRequest {
+  id              String   @id @default(uuid())
+  providerId      String
+  sessionId       String?
+  toolCatalogId   String?
+  toolPolicyId    String?
+  userId          String?
+  jobId           String?
+  paymentLedgerId String?
+  requestId       String
+  status          String   @default("PENDING")
+  chainId         Int?
+  network         String?
+  toolName        String?
+  approvalUrlRef  String?
+  approvalUrlHash String?
+  calldataSummary String?
+  callTargetRef   String?
+  valueSummary    String?
+  txHash          String?  @unique
+  requestedAt     DateTime @default(now())
+  expiresAt       DateTime?
+  resolvedAt      DateTime?
+  executedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  provider      McpProvider     @relation(fields: [providerId], references: [id])
+  session       McpSession?     @relation(fields: [sessionId], references: [id])
+  toolCatalog   McpToolCatalog? @relation(fields: [toolCatalogId], references: [id])
+  toolPolicy    McpToolPolicy?  @relation(fields: [toolPolicyId], references: [id])
+  user          User?           @relation(fields: [userId], references: [id])
+  job           Job?            @relation(fields: [jobId], references: [id])
+  paymentLedger PaymentLedger?  @relation(fields: [paymentLedgerId], references: [id])
+  receipts      McpReceipt[]
+
+  @@unique([providerId, requestId])
+  @@index([providerId])
+  @@index([sessionId])
+  @@index([toolCatalogId])
+  @@index([toolPolicyId])
+  @@index([userId])
+  @@index([jobId])
+  @@index([paymentLedgerId])
+  @@index([status])
+  @@index([chainId])
+  @@index([requestId])
+  @@index([approvalUrlHash])
+  @@index([requestedAt])
+}
+
+model McpReceipt {
+  id                String   @id @default(uuid())
+  providerId        String
+  sessionId         String?
+  approvalRequestId String?
+  userId            String?
+  jobId             String?
+  paymentLedgerId   String?
+  requestId         String?
+  receiptRef        String?
+  receiptHash       String   @unique
+  receiptType       String   @default("tool")
+  status            String   @default("PENDING")
+  chainId           Int?
+  network           String?
+  txHash            String?  @unique
+  toolName          String?
+  calldataSummary   String?
+  resultSummary     String?
+  paymentReferenceHash String?
+  observedAt        DateTime?
+  settledAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  provider        McpProvider         @relation(fields: [providerId], references: [id])
+  session         McpSession?         @relation(fields: [sessionId], references: [id])
+  approvalRequest McpApprovalRequest? @relation(fields: [approvalRequestId], references: [id])
+  user            User?               @relation(fields: [userId], references: [id])
+  job             Job?                @relation(fields: [jobId], references: [id])
+  paymentLedger   PaymentLedger?      @relation(fields: [paymentLedgerId], references: [id])
+
+  @@index([providerId])
+  @@index([sessionId])
+  @@index([approvalRequestId])
+  @@index([userId])
+  @@index([jobId])
+  @@index([paymentLedgerId])
+  @@index([requestId])
+  @@index([status])
+  @@index([chainId])
+  @@index([receiptHash])
+  @@index([txHash])
+  @@index([observedAt])
+}
+
+// ─── Bids ─────────────────────────────────────────────────────────
+
+model Bid {
+  id                String   @id @default(uuid())
+  jobId             String
+  agentId           String
+  amount            Float
+  estimatedDuration String
+  message           String?
+  selected          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  job   Job   @relation(fields: [jobId], references: [id])
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@unique([jobId, agentId])
+}
+
+// ─── Submissions ──────────────────────────────────────────────────
+
+model Submission {
+  id              String   @id @default(uuid())
+  jobId           String
+  deliverableHash String
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  job Job @relation(fields: [jobId], references: [id])
+}
+
+// ─── Disputes ─────────────────────────────────────────────────────
+
+model Dispute {
+  id          String    @id @default(uuid())
+  jobId       String    @unique
+  reason      String
+  openedBy    String
+  status      String    @default("OPEN")
+  resolution  String?
+  agentBps    Int?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  job      Job              @relation(fields: [jobId], references: [id])
+  evidence DisputeEvidence[]
+  votes    ArbiterVote[]
+}
+
+model DisputeEvidence {
+  id         String   @id @default(uuid())
+  disputeId  String
+  submittedBy String
+  contentHash String
+  description String
+  createdAt  DateTime @default(now())
+
+  dispute Dispute @relation(fields: [disputeId], references: [id])
+}
+
+model ArbiterVote {
+  id        String   @id @default(uuid())
+  disputeId String
+  arbiterWallet String
+  agentBps  Int
+  reasoning String
+  createdAt DateTime @default(now())
+
+  dispute Dispute @relation(fields: [disputeId], references: [id])
+
+  @@unique([disputeId, arbiterWallet])
+}
+
+// ─── Ratings ──────────────────────────────────────────────────────
+
+model Rating {
+  id       String @id @default(uuid())
+  jobId    String
+  agentId  String
+  userId   String
+  score    Int
+  comment  String?
+  createdAt DateTime @default(now())
+
+  job   Job   @relation(fields: [jobId], references: [id])
+  agent Agent @relation(fields: [agentId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([jobId, userId])
+}
+
+// ─── Notifications ────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  data      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ─── Job Reports (content moderation) ────────────────────────────
+
+model JobReport {
+  id          String   @id @default(uuid())
+  jobId       String
+  reporterId  String
+  reason      String   // PROHIBITED_CONTENT, FRAUD, IP_VIOLATION, PRIVACY_VIOLATION, OTHER
+  description String
+  status      String   @default("PENDING") // PENDING, REVIEWED, ACTIONED, DISMISSED
+  reviewedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  job      Job  @relation(fields: [jobId], references: [id])
+  reporter User @relation(fields: [reporterId], references: [id])
+
+  @@index([jobId])
+  @@index([status])
+}
+
+// ─── Platform Audit Log (compliance trail) ───────────────────────
+
+model PlatformAuditLog {
+  id            String   @id @default(uuid())
+  actor         String   // wallet address or "SYSTEM"
+  action        String   // JOB_CREATED, BID_PLACED, BID_ACCEPTED, JOB_APPROVED, DISPUTE_OPENED, TERMS_ACCEPTED, etc.
+  resourceType  String   // JOB, BID, DISPUTE, USER, AGENT
+  resourceId    String
+  metadata      String?  // JSON string with non-sensitive context
+  createdAt     DateTime @default(now())
+
+  @@index([actor])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ─── Agent Action Logs (XAI audit trail) ─────────────────────────
+
+model AgentActionLog {
+  id           String   @id @default(uuid())
+  agentId      String
+  actionType   String   // BID, ACCEPT, SUBMIT, SCAN, REJECT
+  jobId        String?
+  inputHash    String?  // hash of input data
+  outputHash   String?  // hash of output/decision
+  reasoning    String?  // human-readable explanation
+  autonomous   Boolean  @default(true)
+  durationMs   Int?
+  success      Boolean
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+  @@index([createdAt])
+}

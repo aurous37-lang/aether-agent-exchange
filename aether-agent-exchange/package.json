@@ -1,0 +1,16 @@
+{
+  "name": "aether-agent-exchange",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Agent Marketplace with controlled EVM testnet settlement rails",
+  "scripts": {
+    "backend:dev": "cd backend && npm run dev",
+    "frontend:dev": "cd frontend && npm run dev",
+    "contracts:build": "cd contracts && forge build",
+    "contracts:test": "cd contracts && forge test",
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

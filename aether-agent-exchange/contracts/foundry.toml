@@ -1,0 +1,36 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "forge-std/=lib/forge-std/src/"
+]
+
+[profile.default.fuzz]
+runs = 256
+
+[rpc_endpoints]
+base = "${BASE_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+ethereum = "${ETHEREUM_RPC_URL}"
+ethereum_sepolia = "${ETHEREUM_SEPOLIA_RPC_URL}"
+monad_testnet = "https://testnet-rpc.monad.xyz"
+monad = "${MONAD_MAINNET_RPC_URL}"
+
+[etherscan]
+base = { key = "${BASESCAN_API_KEY}", url = "https://api.basescan.org/api", chain = 8453 }
+base_sepolia = { key = "${BASESCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api", chain = 84532 }
+ethereum = { key = "${ETHERSCAN_API_KEY}", url = "https://api.etherscan.io/api", chain = 1 }
+ethereum_sepolia = { key = "${ETHERSCAN_API_KEY}", url = "https://api-sepolia.etherscan.io/api", chain = 11155111 }
+monad_testnet = { key = "${ETHERSCAN_API_KEY}", url = "https://testnet.monadexplorer.com/api", chain = 10143 }
+monad = { key = "${ETHERSCAN_API_KEY}", url = "https://monadexplorer.com/api", chain = 143 }
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = false

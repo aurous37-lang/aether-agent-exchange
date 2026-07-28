@@ -1,0 +1,171 @@
+{
+  "policyVersion": "2026-03-23",
+  "auditDate": "2026-03-24",
+  "requirements": [
+    {
+      "id": 1,
+      "name": "terms_acceptance",
+      "policySource": "Sec 1, 6, 13",
+      "behavior": "Users must accept current policy before transacting",
+      "endpoints": ["POST /auth/accept-terms"],
+      "middleware": ["requireAuth"],
+      "frontend": ["ConsentGate"],
+      "auditEvents": ["TERMS_ACCEPTED"],
+      "status": "PASS"
+    },
+    {
+      "id": 2,
+      "name": "fee_disclosure",
+      "policySource": "Sec 4, 8, App B",
+      "behavior": "1.7% fee visible at every value-transfer boundary",
+      "endpoints": ["GET /auth/platform-info"],
+      "middleware": [],
+      "frontend": ["FeeDisclosure", "BidFeeDisclosure", "FinalityWarning", "Transparency"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 3,
+      "name": "risk_disclosure",
+      "policySource": "Sec 7",
+      "behavior": "Blockchain/contract/token risks disclosed before commitment",
+      "endpoints": [],
+      "middleware": [],
+      "frontend": ["RiskDisclosure", "FinalityWarning", "EscrowFundingWarning"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 4,
+      "name": "platform_role_disclosure",
+      "policySource": "Sec 5",
+      "behavior": "Facilitator/conduit statement visible",
+      "endpoints": ["GET /auth/platform-info"],
+      "middleware": [],
+      "frontend": ["PlatformRoleNotice", "Terms", "Transparency"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 5,
+      "name": "autonomous_agent_warning",
+      "policySource": "Sec 3",
+      "behavior": "Users warned when accepting autonomous agent work",
+      "endpoints": [],
+      "middleware": [],
+      "frontend": ["AutonomousAgentWarning"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 6,
+      "name": "finality_warning",
+      "policySource": "Sec 7, 11",
+      "behavior": "Irreversibility disclosed before approval/release",
+      "endpoints": [],
+      "middleware": [],
+      "frontend": ["FinalityWarning"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 7,
+      "name": "dispute_disclosure",
+      "policySource": "Sec 11",
+      "behavior": "Mechanisms are procedural, not guarantees",
+      "endpoints": [],
+      "middleware": [],
+      "frontend": ["DisputeDisclosure"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 8,
+      "name": "supported_token_restriction",
+      "policySource": "Sec 4",
+      "behavior": "Only MON and USDC accepted",
+      "endpoints": ["POST /jobs"],
+      "middleware": ["validate(createJobSchema)"],
+      "frontend": ["PostJob token selector"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 9,
+      "name": "non_issuer_statement",
+      "policySource": "Sec 5",
+      "behavior": "Platform does not issue/guarantee stablecoins",
+      "endpoints": ["GET /auth/platform-info"],
+      "middleware": [],
+      "frontend": ["Terms", "Transparency", "PlatformRoleNotice"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 10,
+      "name": "admin_powers_disclosure",
+      "policySource": "Sec 8, App B",
+      "behavior": "All admin/pause capabilities publicly listed",
+      "endpoints": ["GET /auth/platform-info"],
+      "middleware": [],
+      "frontend": ["Transparency"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 11,
+      "name": "pause_capability_disclosure",
+      "policySource": "Sec 8, App B",
+      "behavior": "Users know contracts can be paused",
+      "endpoints": [],
+      "middleware": [],
+      "frontend": ["Transparency"],
+      "auditEvents": [],
+      "status": "PASS"
+    },
+    {
+      "id": 12,
+      "name": "audit_logging",
+      "policySource": "Sec 11, App B",
+      "behavior": "Critical actions create audit records",
+      "endpoints": ["All protected endpoints"],
+      "middleware": [],
+      "frontend": [],
+      "auditEvents": ["TERMS_ACCEPTED", "JOB_CREATED", "BID_PLACED", "BID_ACCEPTED", "DELIVERABLE_SUBMITTED", "JOB_APPROVED", "JOB_CANCELLED", "DISPUTE_OPENED", "EVIDENCE_SUBMITTED", "ARBITER_VOTED", "DISPUTE_RESOLVED", "AGENT_REGISTERED", "AGENT_RATED", "JOB_REPORTED"],
+      "status": "PASS"
+    },
+    {
+      "id": 13,
+      "name": "policy_versioning",
+      "policySource": "Sec 13",
+      "behavior": "Version tracked, stale consent invalidated",
+      "endpoints": ["POST /auth/accept-terms", "GET /auth/consent-status"],
+      "middleware": ["requireConsent"],
+      "frontend": ["ConsentGate"],
+      "auditEvents": ["TERMS_ACCEPTED"],
+      "status": "PASS"
+    },
+    {
+      "id": 14,
+      "name": "prohibited_uses",
+      "policySource": "Sec 9",
+      "behavior": "Content moderation framework exists",
+      "endpoints": ["POST /reports/jobs/:id/report"],
+      "middleware": ["requireAuth", "validate(reportSchema)"],
+      "frontend": [],
+      "auditEvents": ["JOB_REPORTED"],
+      "status": "PASS"
+    },
+    {
+      "id": 22,
+      "name": "consent_backend_enforcement",
+      "policySource": "App B",
+      "behavior": "Every money-touching endpoint independently verifies consent",
+      "endpoints": ["All POST/PUT/DELETE on jobs, agents, disputes"],
+      "middleware": ["requireConsent"],
+      "frontend": [],
+      "auditEvents": [],
+      "status": "PASS"
+    }
+  ]
+}

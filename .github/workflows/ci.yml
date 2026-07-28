@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            aether-agent-exchange/backend/package-lock.json
+            aether-agent-exchange/frontend/package-lock.json
+
+      - name: Validate backend
+        working-directory: aether-agent-exchange/backend
+        run: |
+          npm ci --ignore-scripts
+          npm run db:generate
+          npm run build
+          npm run test:px402
+          npm audit --omit=dev --audit-level=critical
+
+      - name: Validate frontend
+        working-directory: aether-agent-exchange/frontend
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          npm audit --audit-level=critical
+
+      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1
+        with:
+          version: v1.7.1
+
+      - name: Validate contracts
+        working-directory: aether-agent-exchange/contracts
+        run: |
+          forge fmt --check
+          forge build --force
+          forge test -vv

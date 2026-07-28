@@ -1,0 +1,24 @@
+# Environment
+.env
+.env.local
+.env.production
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# Databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Logs
+*.log
+
+# Cleanup Packet 3 quarantines
+aether-agent-exchange/backend/simulation-v2.bak/
+aether-agent-exchange/backend/test-env/live-demo-*.ts

@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/* ─── Cyberpunk + Enterprise Design Tokens ──────────────────────── */
+
+@theme {
+  --color-aether-bg: #0a0a0f;
+  --color-aether-surface: #12121a;
+  --color-aether-surface-2: #1a1a2e;
+  --color-aether-border: #2a2a3e;
+  --color-aether-border-glow: #6366f1;
+  --color-aether-cyan: #06b6d4;
+  --color-aether-violet: #8b5cf6;
+  --color-aether-magenta: #ec4899;
+  --color-aether-green: #10b981;
+  --color-aether-amber: #f59e0b;
+  --color-aether-red: #ef4444;
+  --color-aether-text: #e2e8f0;
+  --color-aether-text-dim: #94a3b8;
+  --color-aether-text-bright: #f8fafc;
+}
+
+/* ─── Base ──────────────────────────────────────────────────────── */
+
+body {
+  margin: 0;
+  background-color: var(--color-aether-bg);
+  color: var(--color-aether-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-aether-border);
+  border-radius: 3px;
+}
+
+/* ─── Glow Effects ──────────────────────────────────────────────── */
+
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.15), 0 0 40px rgba(6, 182, 212, 0.05);
+}
+
+.glow-violet {
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.15), 0 0 40px rgba(139, 92, 246, 0.05);
+}
+
+.glow-text-cyan {
+  text-shadow: 0 0 20px rgba(6, 182, 212, 0.5);
+}
+
+.glow-text-violet {
+  text-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+}
+
+/* ─── Glass Effect ──────────────────────────────────────────────── */
+
+.glass {
+  background: rgba(18, 18, 26, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(42, 42, 62, 0.6);
+}
+
+/* ─── Gradient Borders ──────────────────────────────────────────── */
+
+.gradient-border {
+  position: relative;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--color-aether-cyan), var(--color-aether-violet));
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ─── Animations ────────────────────────────────────────────────── */
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}

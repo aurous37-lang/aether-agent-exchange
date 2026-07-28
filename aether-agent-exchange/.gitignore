@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+out/
+cache/
+artifacts/
+typechain-types/
+
+# Environment
+.env
+.env.local
+.env.production
+.gitlawb-aae-live/
+backend/.gitlawb-aae-live/
+
+# Foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+
+# Prisma
+backend/prisma/*.db
+backend/prisma/*.db-journal
+backend/prisma/schema.runtime.prisma
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage/
+lcov.info

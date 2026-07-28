@@ -1,0 +1,258 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AAE Simulation v2 Contracts",
+    "version": "1.0.0",
+    "description": "OpenAPI 3.1 schema defining simulation-specific data contracts for Aether Agent Exchange simulation v2."
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "SchemaVersion": {
+        "$id": "urn:aae:sim:schema-version",
+        "type": "string",
+        "const": "1.0.0",
+        "description": "Locked schema version for this contract set."
+      },
+
+      "SimEventType": {
+        "$id": "urn:aae:sim:event-type",
+        "type": "string",
+        "enum": [
+          "JOB_POSTED",
+          "BID_PLACED",
+          "BID_ACCEPTED",
+          "WORK_STARTED",
+          "DELIVERABLE_SUBMITTED",
+          "DELIVERABLE_APPROVED",
+          "DELIVERABLE_REJECTED",
+          "DISPUTE_OPENED",
+          "DISPUTE_RESOLVED",
+          "PAYMENT_RELEASED",
+          "PAYMENT_REFUNDED",
+          "AGENT_REGISTERED",
+          "AGENT_DEACTIVATED",
+          "RATING_SUBMITTED",
+          "GOVERNANCE_VOTE",
+          "INVARIANT_VIOLATION",
+          "ESCROW_FUNDED",
+          "ESCROW_CANCELLED",
+          "AUTO_RELEASE_TRIGGERED"
+        ]
+      },
+
+      "RiskLevel": {
+        "$id": "urn:aae:sim:risk-level",
+        "type": "string",
+        "enum": ["critical", "high", "medium", "low"]
+      },
+
+      "JobStatus": {
+        "$id": "urn:aae:sim:job-status",
+        "type": "string",
+        "enum": [
+          "OPEN",
+          "FUNDED",
+          "IN_PROGRESS",
+          "PENDING_REVIEW",
+          "COMPLETED",
+          "DISPUTED",
+          "RESOLVED",
+          "CANCELLED"
+        ]
+      },
+
+      "GovernanceFields": {
+        "$id": "urn:aae:sim:governance-fields",
+        "type": "object",
+        "properties": {
+          "decidedBy": { "type": "string", "description": "Actor ID that made the governance decision." },
+          "reason": { "type": "string" },
+          "policyRef": { "type": "string", "description": "Reference to the policy or rule that triggered this action." },
+          "quorumMet": { "type": "boolean" },
+          "voteTally": {
+            "type": "object",
+            "properties": {
+              "approve": { "type": "integer", "minimum": 0 },
+              "reject": { "type": "integer", "minimum": 0 },
+              "abstain": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+
+      "SimEvent": {
+        "$id": "urn:aae:sim:event",
+        "type": "object",
+        "required": ["eventId", "type", "timestamp", "actorId", "jobId"],
+        "properties": {
+          "eventId": { "type": "string", "format": "uuid" },
+          "type": { "$ref": "#/components/schemas/SimEventType" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "actorId": { "type": "string" },
+          "jobId": { "type": "string" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Event-specific data (bid amount, deliverable hash, dispute reason, etc.)."
+          },
+          "governance": { "$ref": "#/components/schemas/GovernanceFields" },
+          "parentEventId": { "type": ["string", "null"], "format": "uuid" },
+          "traceId": { "type": "string", "description": "Correlation ID linking to telemetry spans." }
+        },
+        "additionalProperties": false
+      },
+
+      "ClientProfile": {
+        "$id": "urn:aae:sim:actor:client",
+        "type": "object",
+        "required": ["actorId", "role", "walletAddress", "budgetRange"],
+        "properties": {
+          "actorId": { "type": "string" },
+          "role": { "type": "string", "const": "client" },
+          "walletAddress": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+          "budgetRange": {
+            "type": "object",
+            "required": ["min", "max", "currency"],
+            "properties": {
+              "min": { "type": "number", "minimum": 0 },
+              "max": { "type": "number", "minimum": 0 },
+              "currency": { "type": "string", "enum": ["USDC", "MON"] }
+            },
+            "additionalProperties": false
+          },
+          "disputeProbability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "ratingBias": { "type": "number", "minimum": 1, "maximum": 5 }
+        },
+        "additionalProperties": false
+      },
+
+      "HandlerProfile": {
+        "$id": "urn:aae:sim:actor:handler",
+        "type": "object",
+        "required": ["actorId", "role", "walletAddress", "agentIds"],
+        "properties": {
+          "actorId": { "type": "string" },
+          "role": { "type": "string", "const": "handler" },
+          "walletAddress": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+          "agentIds": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "responseTimeMean": { "type": "number", "minimum": 0, "description": "Mean response time in simulated seconds." }
+        },
+        "additionalProperties": false
+      },
+
+      "AgentProfile": {
+        "$id": "urn:aae:sim:actor:agent",
+        "type": "object",
+        "required": ["actorId", "role", "handlerId", "capabilities", "autonomousAccept"],
+        "properties": {
+          "actorId": { "type": "string" },
+          "role": { "type": "string", "const": "agent" },
+          "handlerId": { "type": "string" },
+          "capabilities": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "models": { "type": "array", "items": { "type": "string" } },
+          "autonomousAccept": { "type": "boolean" },
+          "failureProbability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "qualityDistribution": {
+            "type": "object",
+            "properties": {
+              "mean": { "type": "number", "minimum": 0, "maximum": 1 },
+              "stddev": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+
+      "ArbiterProfile": {
+        "$id": "urn:aae:sim:actor:arbiter",
+        "type": "object",
+        "required": ["actorId", "role", "walletAddress"],
+        "properties": {
+          "actorId": { "type": "string" },
+          "role": { "type": "string", "const": "arbiter" },
+          "walletAddress": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+          "biasTowardClient": { "type": "number", "minimum": 0, "maximum": 1 },
+          "responsiveness": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "additionalProperties": false
+      },
+
+      "ScenarioPreset": {
+        "$id": "urn:aae:sim:scenario-preset",
+        "type": "object",
+        "required": ["schemaVersion", "scenarioId", "name", "mode", "actors", "jobCount", "maxTicks"],
+        "properties": {
+          "schemaVersion": { "$ref": "#/components/schemas/SchemaVersion" },
+          "scenarioId": { "type": "string" },
+          "name": { "type": "string", "maxLength": 120 },
+          "description": { "type": "string" },
+          "mode": { "type": "string", "enum": ["normal", "stress", "adversarial", "chaos"] },
+          "seed": { "type": "integer", "description": "PRNG seed for reproducibility." },
+          "actors": {
+            "type": "object",
+            "required": ["clients", "handlers", "agents"],
+            "properties": {
+              "clients": { "type": "array", "items": { "$ref": "#/components/schemas/ClientProfile" }, "minItems": 1 },
+              "handlers": { "type": "array", "items": { "$ref": "#/components/schemas/HandlerProfile" }, "minItems": 1 },
+              "agents": { "type": "array", "items": { "$ref": "#/components/schemas/AgentProfile" }, "minItems": 1 },
+              "arbiters": { "type": "array", "items": { "$ref": "#/components/schemas/ArbiterProfile" } }
+            },
+            "additionalProperties": false
+          },
+          "jobCount": { "type": "integer", "minimum": 1, "maximum": 10000 },
+          "maxTicks": { "type": "integer", "minimum": 1 },
+          "feeBps": { "type": "integer", "default": 170, "description": "Platform fee in basis points (170 = 1.7%)." },
+          "invariants": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of invariant names to enforce during the run."
+          }
+        },
+        "additionalProperties": false
+      },
+
+      "RunSummary": {
+        "$id": "urn:aae:sim:run-summary",
+        "type": "object",
+        "required": ["totalJobs", "completedJobs", "disputedJobs", "cancelledJobs", "totalPayoutsUSDC", "totalFeesUSDC", "invariantViolations"],
+        "properties": {
+          "totalJobs": { "type": "integer", "minimum": 0 },
+          "completedJobs": { "type": "integer", "minimum": 0 },
+          "disputedJobs": { "type": "integer", "minimum": 0 },
+          "cancelledJobs": { "type": "integer", "minimum": 0 },
+          "totalPayoutsUSDC": { "type": "number", "minimum": 0 },
+          "totalFeesUSDC": { "type": "number", "minimum": 0 },
+          "meanCompletionTicks": { "type": "number", "minimum": 0 },
+          "invariantViolations": { "type": "integer", "minimum": 0 },
+          "threatScenariosTriggered": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      },
+
+      "RunOutput": {
+        "$id": "urn:aae:sim:run-output",
+        "type": "object",
+        "required": ["schemaVersion", "runId", "scenarioId", "startedAt", "finishedAt", "status", "events", "summary"],
+        "properties": {
+          "schemaVersion": { "$ref": "#/components/schemas/SchemaVersion" },
+          "runId": { "type": "string", "format": "uuid" },
+          "scenarioId": { "type": "string" },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "finishedAt": { "type": "string", "format": "date-time" },
+          "status": { "type": "string", "enum": ["completed", "failed", "aborted"] },
+          "events": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SimEvent" }
+          },
+          "summary": { "$ref": "#/components/schemas/RunSummary" },
+          "telemetryCorrelationId": { "type": "string", "description": "Links to RunTelemetry.runCorrelationId." }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

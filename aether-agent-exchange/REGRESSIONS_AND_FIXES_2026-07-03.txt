@@ -1,0 +1,100 @@
+AAE Regression And Fix Report - 2026-07-03
+
+Scope
+Two-agent refactor and cleanup pass over backend, contracts, and frontend. The pass focused on integrating live-pilot patch work, removing brittle recovery behavior, preserving settlement and wallet safety gates, and validating the full backend-to-frontend lifecycle.
+
+Agents
+Agent 1, backend/contracts: reviewed backend services, contract tests, settlement verification, chain indexing, workspace provisioning, Prisma/test surfaces, and backend docs.
+Agent 2, frontend/API: reviewed frontend API types, Post Job, Dashboard, Job Detail, direct-wallet lifecycle UI, and runtime payment-capability behavior.
+
+Regressions Found And Fixed
+
+1. Settlement verifier stopped too early on primary RPC null receipt
+Regression: live EVM settlement receipt verification tried fallback RPC URLs only after thrown RPC errors. If the primary RPC was reachable but returned null for eth_getTransactionReceipt, verification returned null immediately and never tried fallback URLs.
+Fix: EvmRpcSettlementReceiptProvider now continues through configured fallback RPC URLs when a provider returns no receipt. Added a local mock-RPC regression test proving primary-null receipt falls through to fallback and records the settled ledger.
+Files:
+- backend/src/config/chains.ts
+- backend/src/services/settlementVerifier.ts
+- backend/test-env/test-settlement-verifier.ts
+
+2. Chain indexer had single-RPC fragility
+Regression: Base chain indexing depended on a single configured RPC URL. A configured provider quota/401 could block indexing even when safe public fallbacks were available.
+Fix: Chain config now supports ordered fallback RPC URLs, and the chain indexer selects the first RPC that reports the expected chain ID and block number.
+Files:
+- backend/src/config/chains.ts
+- backend/src/services/chainIndexer.ts
+
+3. Failed GitHub workspace provisioning was a dead-end patch state
+Regression: a failed ContractWorkspace row could block retry after live GitHub owner drift or repo creation mismatch. The failed row preserved useful evidence, but the UI/backend could not cleanly reprovision in place.
+Fix: createOrLinkWorkspace now allows FAILED workspace retry in place with preserved audit history. GitHub provisioning resolves the authenticated owner when no real owner is configured, reuses existing repos, uses actual repo owner/name for collaborator/PR/webhook calls, and records retry success/failure events.
+Files:
+- backend/src/routes/workspaces.ts
+- backend/src/services/workspaces.ts
+- backend/src/services/workspaces/adapters.ts
+- frontend/src/pages/Dashboard.tsx
+- frontend/src/pages/JobDetail.tsx
+
+4. GitHub linked private repo invite handling required manual operator action
+Regression: for live GitHub linked workspaces, the AAE service account might have a pending repository invitation that was not accepted automatically, leaving repo access/webhook setup incomplete.
+Fix: GitHub link mode now checks pending service-account repository invitations, accepts the matching invitation when present, verifies repo access, and attempts webhook setup without printing tokens or secrets.
+Files:
+- backend/src/services/workspaces/adapters.ts
+
+5. Final direct-wallet approval payload sent nullable optional fields
+Regression: native ETH direct-wallet release receipt recording could send tokenAddress: null from the frontend. Backend validation expects optional tokenAddress to be omitted for native-token escrow, so final approval failed with HTTP 400 Validation failed.
+Fix: Job Detail now omits nullable optional receipt fields and validates direct-wallet rail, network, budget token, escrow address, and release tx hash before recording the release receipt and calling authenticated final approval.
+Files:
+- frontend/src/pages/JobDetail.tsx
+- frontend/src/lib/api.ts
+
+6. Direct-wallet final approval could be hidden after indexed release
+Regression: direct-wallet jobs could remain FUNDED/IN_PROGRESS while the on-chain lifecycle was already RELEASED_ONCHAIN and FINAL, leaving the final approval action unavailable unless the database job status had already advanced to PENDING_REVIEW.
+Fix: Job Detail now shows the approval/record-release action for client-owned direct-wallet jobs in FUNDED, IN_PROGRESS, or PENDING_REVIEW when indexed release evidence is available or on-chain release is available.
+Files:
+- frontend/src/pages/JobDetail.tsx
+
+7. Dashboard close action needed escrow safety boundary
+Regression: the requested Dashboard Close Job action could have been exposed for any OPEN job, including escrow-backed jobs with escrow metadata where database-only cancellation is not sufficient.
+Fix: Dashboard shows Close Job only for poster-owned OPEN jobs that are not escrow-backed. Escrow-backed OPEN jobs show a warning that wallet refund/cancel evidence is required before database closure. The backend cancel route remains the authority and still allows only the job creator to cancel status OPEN.
+Files:
+- frontend/src/pages/Dashboard.tsx
+
+8. Post Job trusted bundled contract config over runtime backend capability
+Regression: Post Job could enable rails from local bundled addresses even if /api/settlement/providers was stale, unavailable, or reported the rail disabled.
+Fix: Post Job now waits for runtime payment-capability data, enables direct-wallet rail only when both local contract config and backend capability agree, displays capability errors/warnings, and disables submission when no rail is enabled.
+Files:
+- frontend/src/pages/PostJob.tsx
+
+9. Stale funding failure copy referenced a nonexistent retry flow
+Regression: direct-wallet funding failure copy told users to retry funding from Job Detail, but there is no complete post-create retry-funding product flow.
+Fix: copy now directs users to review job detail state or close the open database job only if no escrow was funded.
+Files:
+- frontend/src/pages/PostJob.tsx
+
+10. Full lifecycle simulation was order-dependent in the combined backend runner
+Regression: earlier backend suites can create synthetic agents under the Bob handler user. The simulation then hit the one-agent-per-handler guard, treated any 409 as wallet reuse, and failed when no wallet-exact agent was present.
+Fix: DummyAgent now reuses a wallet-exact existing handler agent when available, otherwise reuses the first existing handler agent for combined-suite simulation continuity. Production one-agent-per-handler behavior was not changed.
+Files:
+- backend/test-env/dummy-agent.ts
+
+Safety Invariants Preserved
+- Settled PaymentLedger rows do not auto-complete paid jobs.
+- Final completion still requires explicit authenticated client approval.
+- Workspace verification/evidence does not bypass payment or approval gates.
+- Dashboard Close Job does not database-close escrow-backed jobs.
+- No wallet transaction automation was added.
+- No mainnet writes, live signer operations, raw payment headers, wallet signatures, private keys, env contents, webhook secrets, database URLs, or API tokens were printed or persisted.
+
+Validation Run
+- backend npm run build: passed
+- backend npx prisma validate: passed
+- backend DATABASE_URL='postgresql://user:password@localhost:5432/aae' npx prisma validate --schema prisma/schema.postgres.prisma: passed
+- frontend npm run lint: passed
+- frontend npm run build: passed
+- contracts forge test: passed, 59 tests
+- backend AAE_ENABLE_WORKSPACE_CONTRACT_TESTS=true npm run test:all: passed, including settlement verifier, chain indexer, stablecoin provider boundary, backend API, Base MCP rails, frontend API integration, contract-bound workspace acceptance, full lifecycle simulation, and invariant tests
+
+Residual Risks
+- Browser wallet/E2E flows were not executed because no additional wallet transaction was authorized or needed.
+- Backend source changes were validated locally but not restarted into production during this cleanup pass.
+- Direct-wallet post-create funding retry remains a future product/API design task.
